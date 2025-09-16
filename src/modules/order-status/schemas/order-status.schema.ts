@@ -50,53 +50,42 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { Order } from '../../orders/schemas/order.schema';
 
-export type OrderStatusDocument = OrderStatus & Document;
+export type OrderStatusDocument = OrderStatus & Document & { _id: Types.ObjectId };
 
 @Schema({ timestamps: true })
 export class OrderStatus {
-  @Prop({ type: Types.ObjectId, ref: Order.name, required: true })
-  collect_id: Types.ObjectId; // Reference to Order
+  @Prop({ type: Types.ObjectId, ref: 'Order', required: true })
+  collect_id: string;
 
-  @Prop()
+  @Prop({ required: true })
   order_amount: number;
 
   @Prop()
-  transaction_amount: number;
+  transaction_amount?: number;
 
   @Prop()
-  payment_mode: string;
+  payment_mode?: string;
 
   @Prop()
-  payment_details: string;
+  payment_details?: string;
 
   @Prop()
-  bank_reference: string;
+  bank_reference?: string;
 
   @Prop()
-  payment_message: string;
+  payment_message?: string;
 
   @Prop()
-  status: string;
+  status?: string;
 
   @Prop()
-  error_message: string;
+  error_message?: string;
 
   @Prop()
-  payment_time: Date;
+  payment_time?: Date;
 }
 
 export const OrderStatusSchema = SchemaFactory.createForClass(OrderStatus);

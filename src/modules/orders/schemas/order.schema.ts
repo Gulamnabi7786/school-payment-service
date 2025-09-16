@@ -27,13 +27,10 @@
 
 
 
-
-
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
-export type OrderDocument = Order & Document;
+export type OrderDocument = Order & Document & { _id: Types.ObjectId };
 
 @Schema({ timestamps: true })
 export class Order {
@@ -41,7 +38,7 @@ export class Order {
   school_id: string; // can be ObjectId or string
 
   @Prop()
-  trustee_id?: string; // optional
+  trustee_id?: string;
 
   @Prop({
     type: {
@@ -54,6 +51,9 @@ export class Order {
 
   @Prop()
   gateway_name?: string;
+
+  @Prop({ index: true })
+  collect_request_id?: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
