@@ -22,14 +22,15 @@
 
 
 
-
-
 import { Controller, Get } from '@nestjs/common';
+import { AppService } from './app.service';
 
-@Controller('health')
-export class HealthController {
+@Controller()
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+
   @Get()
-  health() {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+  getHello(): string {
+    return this.appService.getHello();
   }
 }

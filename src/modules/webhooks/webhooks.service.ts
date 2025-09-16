@@ -1,51 +1,61 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { OrdersService } from '../orders/orders.service';
-import { OrderStatusService } from '../order-status/order-status.service';
-import { WebhookLogService } from './webhook-log.service';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Order } from '../orders/schemas/order.schema';
+import { OrderStatus } from '../order-status/schemas/order-status.schema';
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
   constructor(
-    private ordersService: OrdersService,
-    private orderStatusService: OrderStatusService,
-    private webhookLogService: WebhookLogService,
+    @InjectModel(Order.name) private readonly orderModel: Model<Order>,
+    @InjectModel(OrderStatus.name) private readonly orderStatusModel: Model<OrderStatus>,
   ) {}
 
-  async processWebhook(payload: any) {
-    await this.webhookLogService.create(payload);
+  /**
+   * Handle incoming webhook payload
+   */
+  async handleWebhook(payload: any): Promise<any> {
+    try {
+      this.logger.debug('Received webhook payload', JSON.stringify(payload));
 
-    const info = payload?.order_info;
-    if (!info) return { ok: false, reason: 'missing order_info' };
+      // 1️⃣ Extract order info
+      const orderInfo = payload.order_info;
+      if (!orderInfo || !orderInfo.order_id) {
+        throw new HttpException('Invalid payload: order_info missing', HttpStatus.BAD_REQUEST);
+      }
 
-    // extract collect_request_id
-    const rawOrderId = info.order_id;
-    const collect_request_id = rawOrderId ? rawOrderId.split('/')[0] : null;
+      // 2️⃣ Find related Order
+      const order = await this.orderModel.findById(orderInfo.order_id);
+      if (!order) {
+        throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+      }
 
-    if (!collect_request_id) {
-      this.logger.warn('Webhook missing collect_request_id');
-      return { ok: false, reason: 'missing collect_request_id' };
+      // 3️⃣ Update OrderStatus document
+      await this.orderStatusModel.findOneAndUpdate(
+        { collect_id: order._id.toString() },
+        {
+          order_amount: orderInfo.order_amount,
+          transaction_amount: orderInfo.transaction_amount,
+          payment_mode: orderInfo.payment_mode,
+          payment_details: orderInfo.payment_details,
+          bank_reference: orderInfo.bank_reference,
+          payment_message: orderInfo.payment_message,
+          status: orderInfo.status,
+          error_message: orderInfo.error_message,
+          payment_time: orderInfo.payment_time,
+        },
+        { upsert: true, new: true },
+      );
+
+      return { success: true, message: 'Webhook processed successfully' };
+    } catch (error) {
+      this.logger.error('Error processing webhook', error);
+      throw new HttpException(
+        error.response?.data || error.message || 'Webhook processing failed',
+        HttpStatus.BAD_REQUEST,
+      );
     }
-
-    const order = await this.ordersService.findByCollectRequestId(collect_request_id);
-    if (!order) {
-      this.logger.warn(`Order not found for collect_request_id=${collect_request_id}`);
-      return { ok: false, reason: 'order_not_found' };
-    }
-
-    await this.orderStatusService.updateByOrderId(order._id.toHexString(), {
-      order_amount: info.order_amount,
-      transaction_amount: info.transaction_amount,
-      payment_mode: info.payment_mode,
-      payment_details: info.payemnt_details || info.payment_details,
-      bank_reference: info.bank_reference,
-      payment_message: info.Payment_message || info.payment_message,
-      status: info.status,
-      error_message: info.error_message,
-      payment_time: info.payment_time ? new Date(info.payment_time) : new Date(),
-    });
-
-    return { ok: true };
   }
 }

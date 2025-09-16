@@ -1,20 +1,20 @@
-import { Controller, Post, Body, Get, Param, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('payment')
+@UseGuards(JwtAuthGuard) // protect routes with JWT
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
-  // POST /payment/create-payment
-  @Post('create-payment')
+  @Post('create')
   async createPayment(@Body() dto: CreatePaymentDto) {
-    return this.paymentService.createCollect(dto);
+    return this.paymentService.createPayment(dto);
   }
 
-  // GET /payment/check-status/:collect_request_id?school_id=...
-  @Get('check-status/:collect_request_id')
-  async checkStatus(@Param('collect_request_id') id: string, @Query('school_id') school_id?: string) {
-    return this.paymentService.checkCollectStatus(id, school_id);
+  @Get('status/:id')
+  async checkPaymentStatus(@Param('id') id: string) {
+    return this.paymentService.checkPaymentStatus(id);
   }
 }

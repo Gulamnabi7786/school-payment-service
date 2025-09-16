@@ -1,136 +1,114 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 import * as jwt from 'jsonwebtoken';
-import { OrdersService } from '../orders/orders.service';
-import { OrderStatusService } from '../order-status/order-status.service';
-import { OrderDocument } from '../orders/schemas/order.schema';
+import { ConfigService } from '@nestjs/config';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
 export class PaymentService {
-  private readonly logger = new Logger(PaymentService.name);
-  private baseUrl: string;
-  private apiKey: string;
-  private pgKey: string;
+  private readonly apiUrl = 'https://dev-vanilla.edviron.com/erp';
 
-  constructor(
-    private config: ConfigService,
-    private ordersService: OrdersService,
-    private orderStatusService: OrderStatusService,
-  ) {
-    this.baseUrl = this.config.get<string>('PAYMENT_BASE_URL')!;
-    this.apiKey = this.config.get<string>('PAYMENT_API_KEY')!;
-    this.pgKey = this.config.get<string>('PG_KEY')!;
+  constructor(private readonly configService: ConfigService) {
+    // Debug log to confirm env variables are loaded
+    console.log('ENV CHECK (PaymentService):', {
+      SCHOOL_ID: this.configService.get<string>('SCHOOL_ID'),
+      PG_KEY: this.configService.get<string>('PG_KEY'),
+      PAYEMENT_API_KEY: this.configService.get<string>('PAYMENT_API_KEY'),
+    });
   }
 
   /**
-   * Create collect request: signs payload, calls external API, saves DB records.
+   * Create a new payment (collect request)
    */
-  async createCollect(payload: { school_id: string; amount: string; callback_url: string; custom_order_id?: string }) {
-    const { school_id, amount, callback_url, custom_order_id } = payload;
-
-    if (!this.pgKey || !this.apiKey) {
-      throw new BadRequestException('Payment gateway keys not configured');
-    }
-
-    // 1) Build sign (JWT) using PG_KEY
-    const signPayload = { school_id, amount, callback_url };
-    const sign = jwt.sign(signPayload, this.pgKey);
-
-    // 2) Prepare request body
-    const body = { school_id, amount, callback_url, sign };
-
-    // 3) Save a preliminary order in DB
-    const orderDoc: OrderDocument = await this.ordersService.create({
-      school_id,
-      trustee_id: undefined,
-      student_info: { name: '', id: '', email: '' },
-      gateway_name: 'Edviron',
-      collect_request_id: undefined,
-    });
-
+  async createPayment(dto: CreatePaymentDto) {
     try {
-      // 4) Call external API
-      const url = `${this.baseUrl}/create-collect-request`;
-      const res = await axios.post(url, body, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        timeout: 10000,
-      });
+      const schoolId = this.configService.get<string>('SCHOOL_ID');
+      const pgKey = this.configService.get<string>('PG_KEY');
+      const apiKey = this.configService.get<string>('PAYMENT_API_KEY');
 
-      const data = res.data;
-
-      // 5) Map external ID to local order
-      await this.ordersService.update(orderDoc._id.toHexString(), {
-        collect_request_id: data.collect_request_id,
-      });
-
-      // 6) Create initial OrderStatus entry
-      await this.orderStatusService.create({
-        collect_id: orderDoc._id.toHexString(),
-        order_amount: Number(amount),
-        transaction_amount: undefined,
-        payment_mode: undefined,
-        payment_details: undefined,
-        bank_reference: undefined,
-        payment_message: undefined,
-        status: 'PENDING',
-        error_message: undefined,
-        payment_time: undefined,
-      });
-
-      // 7) Return response
-      return {
-        collect_request_id: data.collect_request_id,
-        collect_request_url:
-          data.Collect_request_url || data.collect_request_url || data.url,
-        sign: data.sign || sign,
-      };
-    } catch (err: any) {
-      this.logger.error('createCollect call failed', err?.response?.data ?? err.message);
-      try {
-        await this.ordersService.delete(orderDoc._id.toHexString());
-      } catch (e) {
-        this.logger.warn('Failed to rollback order after error');
+      if (!schoolId || !pgKey || !apiKey) {
+        throw new HttpException(
+          'Missing payment configuration (SCHOOL_ID, PG_KEY, PAYMENT_API_KEY)',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
-      throw new BadRequestException('Failed to create collect request with payment gateway');
+
+      // ✅ include all fields including custom_order_id
+      const payload = {
+        school_id: dto.school_id || schoolId,
+        amount: dto.amount,
+        callback_url: dto.callback_url,
+        custom_order_id: dto.custom_order_id,
+      };
+
+      // JWT sign using PG_KEY
+      const sign = jwt.sign(payload, pgKey as string);
+
+      // Body to send to Edviron PG API
+      const body = {
+        ...payload,
+        sign,
+      };
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      };
+
+      // 🔍 Debug logs
+      console.log('>>> Sending to Edviron PG:', body);
+
+      const response = await axios.post(
+        `${this.apiUrl}/create-collect-request`,
+        body,
+        { headers },
+      );
+
+      console.log('>>> PG Response:', response.data);
+
+      return response.data;
+    } catch (error) {
+      const err = error as any;
+      throw new HttpException(
+        err?.response?.data || err?.message || 'Payment creation failed',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   /**
-   * Check payment status by calling the gateway GET endpoint.
+   * Check payment status
    */
-  async checkCollectStatus(collect_request_id: string, school_id?: string) {
-    const schoolId = school_id ?? this.config.get<string>('SCHOOL_ID');
-    if (!schoolId) throw new BadRequestException('school_id is required');
+  async checkPaymentStatus(collectRequestId: string) {
+    try {
+      const schoolId = this.configService.get<string>('SCHOOL_ID');
+      const pgKey = this.configService.get<string>('PG_KEY');
 
-    // sign payload for status check
-    const sign = jwt.sign({ school_id: schoolId, collect_request_id }, this.pgKey);
+      if (!schoolId || !pgKey) {
+        throw new HttpException(
+          'Missing payment configuration (SCHOOL_ID, PG_KEY)',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
 
-    const url = `${this.baseUrl}/collect-request/${collect_request_id}?school_id=${encodeURIComponent(
-      schoolId,
-    )}&sign=${encodeURIComponent(sign)}`;
+      const payload = {
+        school_id: schoolId,
+        collect_request_id: collectRequestId,
+      };
 
-    const res = await axios.get(url, {
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-    });
+      const sign = jwt.sign(payload, pgKey as string);
 
-    const data = res.data;
+      const response = await axios.get(
+        `${this.apiUrl}/collect-request/${collectRequestId}?school_id=${schoolId}&sign=${sign}`,
+      );
 
-    // Update DB
-    const order = await this.ordersService.findByCollectRequestId(collect_request_id);
-    if (order) {
-      await this.orderStatusService.updateByOrderId(order._id.toHexString(), {
-        status: data.status || 'UNKNOWN',
-        transaction_amount: data.amount ?? undefined,
-        payment_time: new Date(),
-      });
+      return response.data;
+    } catch (error) {
+      const err = error as any;
+      throw new HttpException(
+        err?.response?.data || err?.message || 'Failed to check status',
+        HttpStatus.BAD_REQUEST,
+      );
     }
-
-    return data;
   }
 }

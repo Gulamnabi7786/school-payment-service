@@ -4,11 +4,11 @@ import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
 import { OrdersModule } from '../orders/orders.module';
 import { OrderStatusModule } from '../order-status/order-status.module';
-import { WebhooksModule } from '../webhooks/webhooks.module';
 
 @Module({
-  imports: [ConfigModule, OrdersModule, OrderStatusModule, WebhooksModule],
+  imports: [ConfigModule, OrdersModule, OrderStatusModule],
   providers: [PaymentService],
   controllers: [PaymentController],
+  exports: [PaymentService],
 })
 export class PaymentModule {}

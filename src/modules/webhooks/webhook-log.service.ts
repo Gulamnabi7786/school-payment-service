@@ -1,11 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { WebhookLog, WebhookLogDocument } from './schemas/webhook-log.schema';
 
 @Injectable()
 export class WebhookLogService {
-  private readonly logger = new Logger(WebhookLogService.name);
+  constructor(
+    @InjectModel(WebhookLog.name) private webhookLogModel: Model<WebhookLogDocument>,
+  ) {}
 
-  // Save raw webhook logs (right now just logs, later can save to DB)
-  async create(data: any): Promise<void> {
-    this.logger.debug('WebhookLog: ' + JSON.stringify(data));
+  async createLog(payload: any): Promise<WebhookLog> {
+    const log = new this.webhookLogModel({
+      payload,
+      receivedAt: new Date(),
+    });
+    return log.save();
   }
 }
