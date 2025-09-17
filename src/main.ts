@@ -86,7 +86,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:3000', // local frontend
-      'https://edviron-school-payment-frontend.vercel.app', // Vercel frontend
+      // 'https://edviron-school-payment-frontend.vercel.app', // Vercel frontend
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
@@ -100,3 +100,31 @@ async function bootstrap() {
 }
 bootstrap();
 
+
+
+
+
+
+
+
+
+
+
+
+// // main.ts
+// import { NestFactory } from '@nestjs/core';
+// import { AppModule } from './app.module';
+
+// async function bootstrap() {
+//   const app = await NestFactory.create(AppModule, { cors: true });
+
+//   // OR more secure (only allow frontend origin):
+//   app.enableCors({
+//     origin: 'http://localhost:3001',
+//     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+//     credentials: true,
+//   });
+
+//   await app.listen(3000);
+// }
+// bootstrap();
