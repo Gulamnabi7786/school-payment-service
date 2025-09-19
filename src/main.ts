@@ -86,7 +86,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:3000', // local frontend
-      // 'https://edviron-school-payment-frontend.vercel.app', // Vercel frontend
+      'https://edviron-school-payment-frontend.vercel.app', // Vercel frontend
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
